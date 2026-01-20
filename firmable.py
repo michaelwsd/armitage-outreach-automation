@@ -7,15 +7,14 @@ load_dotenv()
 FIRMABLE_API_KEY = os.getenv("FIRMABLE_API_KEY")
 BASE_URL = "https://api.firmable.com/company"
 
-def get_info(company_url):
+def get_company_info(url, linkedin=False):
     headers = {
         "Authorization": f"Bearer {FIRMABLE_API_KEY}",
         "Accept": "application/json"
     }
 
-    params = {
-        "website": company_url
-    }
+    if linkedin: params = {"ln_url": url}
+    else: params = {"website": url}
 
     headers = {
         "Authorization": f"Bearer {FIRMABLE_API_KEY}"
@@ -37,4 +36,4 @@ def get_info(company_url):
 
 
 if __name__ == "__main__":
-    print(get_info("https://www.labgroup.com.au/"))
+    print(get_company_info("https://www.labgroup.com.au/"))
