@@ -148,12 +148,12 @@ def analyze_posts_batch_with_openai(posts):
 
 def convert_relative_date_to_absolute(relative_date):
     """
-    Convert relative date strings (e.g., '1d', '2w', '3mo') to absolute dates in DD/MM/YYYY format.
+    Convert relative date strings (e.g., '1h', '1d', '2w', '3mo') to absolute dates in DD/MM/YYYY format.
     """
     today = datetime.now()
 
-    # Pattern to match relative dates like '1d', '2w', '3mo', '4y'
-    match = re.match(r'(\d+)(d|w|mo|y)', relative_date.lower().strip())
+    # Pattern to match relative dates like '1h', '1d', '2w', '3mo', '4y'
+    match = re.match(r'(\d+)(h|d|w|mo|y)', relative_date.lower().strip())
 
     if not match:
         logger.warning(f"Could not parse relative date: {relative_date}")
@@ -162,7 +162,9 @@ def convert_relative_date_to_absolute(relative_date):
     amount = int(match.group(1))
     unit = match.group(2)
 
-    if unit == 'd':
+    if unit == 'h':
+        target_date = today - timedelta(hours=amount)
+    elif unit == 'd':
         target_date = today - timedelta(days=amount)
     elif unit == 'w':
         target_date = today - timedelta(weeks=amount)
@@ -241,8 +243,8 @@ def summarize_csv(news_filepath, posts_filepath):
 
             growth_posts.append({
                 "summary": analysis['summary'],
-                "growth_type": analysis['growth_type'] + " - " + relative_date,
-                "date": absolute_date
+                "growth_type": analysis['growth_type'],
+                "date": absolute_date + " - " + relative_date
             })
             logger.info(f"Growth indicator found: {analysis['growth_type']} - {relative_date} -> {absolute_date}")
 
