@@ -143,7 +143,7 @@ def analyze_posts_batch_with_openai(posts):
 
     except Exception as e:
         logger.exception(f"Failed to analyze posts batch: {e}")
-        raise
+        return []  # Return empty list to allow workflow to continue
 
 
 def convert_relative_date_to_absolute(relative_date):
@@ -216,7 +216,8 @@ def add_posts_to_news_file(news_filepath, posts_data):
 
     except Exception as e:
         logger.exception(f"Failed to add posts to news file: {e}")
-        raise
+        return False
+    return True
 
 
 def summarize_csv(news_filepath, posts_filepath):
@@ -226,42 +227,79 @@ def summarize_csv(news_filepath, posts_filepath):
     Args:
         news_filepath: Path to the company news JSON file (e.g., "data/output/OnQ Software.json")
         posts_filepath: Path to the LinkedIn posts CSV file (e.g., "data/output/OnQ Software Linkedin Posts.csv")
+
+    Returns:
+        list: Growth posts on success
+        None: On failure or if inputs are missing
     """
+    # Handle missing inputs gracefully
+    if not news_filepath:
+        logger.warning("No news filepath provided, skipping summarization")
+        return None
+
+    if not posts_filepath:
+        logger.warning("No posts filepath provided, skipping LinkedIn post analysis")
+        return None
+
+    if not os.path.exists(posts_filepath):
+        logger.warning(f"Posts CSV file not found: {posts_filepath}, skipping LinkedIn post analysis")
+        return None
+
+    if not os.path.exists(news_filepath):
+        logger.warning(f"News JSON file not found: {news_filepath}, cannot add posts")
+        return None
+
     logger.info(f"Processing posts from {posts_filepath}")
 
-    # Parse CSV
-    posts = parse_csv(posts_filepath)
-    logger.info(f"Found {len(posts)} posts in CSV")
+    try:
+        # Parse CSV
+        posts = parse_csv(posts_filepath)
+        logger.info(f"Found {len(posts)} posts in CSV")
 
-    # Analyze all posts in one batch API call
-    logger.info(f"Analyzing all {len(posts)} posts in a single API call")
-    analyzed_posts = analyze_posts_batch_with_openai(posts)
+        if not posts:
+            logger.warning("No posts found in CSV, skipping analysis")
+            return []
 
-    # Filter for growth indicators only and convert dates
-    growth_posts = []
-    for analysis in analyzed_posts:
-        if analysis['is_growth_indicator']:
-            relative_date = analysis['date']
-            absolute_date = convert_relative_date_to_absolute(relative_date)
+        # Analyze all posts in one batch API call
+        logger.info(f"Analyzing all {len(posts)} posts in a single API call")
+        analyzed_posts = analyze_posts_batch_with_openai(posts)
 
-            growth_posts.append({
-                "summary": analysis['summary'],
-                "growth_type": analysis['growth_type'],
-                "date": absolute_date + " - " + relative_date
-            })
-            logger.info(f"Growth indicator found: {analysis['growth_type']} - {relative_date} -> {absolute_date}")
+        if not analyzed_posts:
+            logger.warning("Post analysis returned no results")
+            return []
 
-    logger.info(f"Found {len(growth_posts)} growth indicator posts out of {len(posts)} total posts")
+        # Filter for growth indicators only and convert dates
+        growth_posts = []
+        for analysis in analyzed_posts:
+            if analysis.get('is_growth_indicator'):
+                relative_date = analysis.get('date', 'Unknown')
+                absolute_date = convert_relative_date_to_absolute(relative_date)
 
-    # Sort posts chronologically (latest first)
-    growth_posts.sort(key=lambda x: parse_date_for_sorting(x['date']), reverse=True)
-    logger.info("Sorted posts chronologically (latest first)")
+                growth_posts.append({
+                    "summary": analysis.get('summary', ''),
+                    "growth_type": analysis.get('growth_type', ''),
+                    "date": absolute_date + " - " + relative_date
+                })
+                logger.info(f"Growth indicator found: {analysis.get('growth_type')} - {relative_date} -> {absolute_date}")
 
-    # Add to news file
-    add_posts_to_news_file(news_filepath, growth_posts)
+        logger.info(f"Found {len(growth_posts)} growth indicator posts out of {len(posts)} total posts")
 
-    logger.info("Processing complete!")
-    return growth_posts
+        # Sort posts chronologically (latest first)
+        growth_posts.sort(key=lambda x: parse_date_for_sorting(x['date']), reverse=True)
+        logger.info("Sorted posts chronologically (latest first)")
+
+        # Add to news file
+        add_posts_to_news_file(news_filepath, growth_posts)
+
+        logger.info("Processing complete!")
+        return growth_posts
+
+    except FileNotFoundError as e:
+        logger.error(f"File not found during summarization: {e}")
+        return None
+    except Exception as e:
+        logger.exception(f"Error during summarization: {e}")
+        return None
 
 
 if __name__ == "__main__":

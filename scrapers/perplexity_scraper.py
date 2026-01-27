@@ -173,7 +173,7 @@ async def scrape_news_perplexity(company_info, timeframe):
 
     except Exception:
         logger.exception("Failed to pull news for %s", company_name)
-        raise  # re-raise so callers can handle it
+        return None  # Return None to allow workflow to continue
 
 # -------------------------------------------------------------------
 # Entrypoint
