@@ -5,3 +5,4 @@ data/output/*
 __pycache__/
 .github
 data/dump/*
+.claude
