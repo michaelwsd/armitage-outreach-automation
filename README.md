@@ -58,6 +58,7 @@ companies.csv
 ├── data/
 │   ├── input/companies.csv          # Target companies list
 │   └── output/                      # Generated JSON reports and CSV files
+├── cron.txt                         # Cron schedule definition
 └── .github/workflows/
     └── weekly-scrape.yml            # GitHub Actions workflow
 ```
@@ -164,9 +165,33 @@ Each company produces a JSON file in `data/output/` with the following structure
 }
 ```
 
-## CI/CD
+## Scheduling
 
-The GitHub Actions workflow (`.github/workflows/weekly-scrape.yml`) runs the pipeline on push to main or via manual dispatch. All API keys and credentials should be stored as GitHub Secrets.
+### Cron (recommended for local/server deployment)
+
+The pipeline is configured to run weekly via a system cron job. The schedule is defined in `cron.txt`:
+
+```
+0 0 * * 0  # Every Sunday at midnight
+```
+
+To install the cron job:
+
+```bash
+crontab cron.txt
+```
+
+To verify it was installed:
+
+```bash
+crontab -l
+```
+
+The cron job uses the project's virtual environment Python interpreter and logs output to `cron.log` in the project directory. Check this file to debug any issues with scheduled runs:
+
+```bash
+tail -f cron.log
+```
 
 ## Tools & APIs
 
