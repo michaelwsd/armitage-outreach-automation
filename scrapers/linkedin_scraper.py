@@ -1,4 +1,5 @@
 import os
+import sys
 import asyncio
 import random
 import csv
@@ -6,6 +7,9 @@ import logging
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright
 from playwright_stealth import Stealth
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from email_client import send_alert_email
 
 # -------------------------------------------------------------------
 # Logging configuration
@@ -93,39 +97,33 @@ async def run(company_url, scroll_loops, output_file):
 
             # 4. Handle login / auth walls
             if "login" in page.url or "authwall" in page.url or "signup" in page.url:
-                logger.warning(
-                    "Not logged in. Please log in manually in the browser window. "
-                    "Waiting for login to complete..."
-                )
-                # Wait up to 120s for the user to log in and land on a linkedin.com/feed or company page
-                try:
-                    await page.wait_for_url("**/feed/**", timeout=120000)
-                    logger.info("Login detected. Navigating to target page...")
-                    await page.goto(company_url, timeout=60000)
-                except Exception:
-                    logger.error("Login was not completed in time. Closing browser.")
-                    await context.close()
-                    return False
+                logger.error("LinkedIn session expired or not logged in.")
+                alert_recipients = os.getenv("ALERT_EMAIL", "").split(",")
+                alert_recipients = [r.strip() for r in alert_recipients if r.strip()]
+                if alert_recipients:
+                    send_alert_email(
+                        alert_recipients,
+                        "LinkedIn Session Expired",
+                        "The LinkedIn session has expired or is not logged in. "
+                        "Please run 'python scrapers/linkedin_login.py' to re-authenticate.",
+                    )
+                await context.close()
+                return False
 
             # 4b. Detect CAPTCHA / security check
             if "checkpoint/challenge" in page.url or "security-verification" in page.url:
-                logger.warning(
-                    "LinkedIn security verification (CAPTCHA) detected. "
-                    "Please complete the check in the browser window. "
-                    "Waiting up to 5 minutes..."
-                )
-                try:
-                    # Wait for the URL to no longer be a checkpoint/challenge page
-                    await page.wait_for_function(
-                        "() => !window.location.href.includes('checkpoint') && !window.location.href.includes('security-verification')",
-                        timeout=300000,
+                logger.error("LinkedIn CAPTCHA/security check detected.")
+                alert_recipients = os.getenv("ALERT_EMAIL", "").split(",")
+                alert_recipients = [r.strip() for r in alert_recipients if r.strip()]
+                if alert_recipients:
+                    send_alert_email(
+                        alert_recipients,
+                        "LinkedIn CAPTCHA Detected",
+                        "LinkedIn is requiring a security verification (CAPTCHA). "
+                        "Please run 'python scrapers/linkedin_login.py' to complete the check.",
                     )
-                    logger.info("Security check passed. Navigating to target page...")
-                    await page.goto(company_url, timeout=60000)
-                except Exception:
-                    logger.error("Security check was not completed in time.")
-                    await context.close()
-                    return False
+                await context.close()
+                return False
 
             # 5. Scroll Loop (Async sleep)
             # Pause before scrolling (simulate reading the page)
@@ -234,8 +232,6 @@ async def run(company_url, scroll_loops, output_file):
             except Exception:
                 pass
         return False
-    finally:
-        pass
 
 if __name__ == "__main__":
     company_info = {

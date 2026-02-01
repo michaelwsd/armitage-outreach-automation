@@ -357,6 +357,48 @@ def send_digest_report(recipients: list[str], output_dir: str = "data/output") -
     return client.send_email(recipients, subject, html)
 
 
+def send_alert_email(recipients: list[str], subject: str, message: str) -> bool:
+    """
+    Send a simple alert/notification email.
+
+    Args:
+        recipients: List of email addresses to notify.
+        subject: Email subject line.
+        message: Plain text message body.
+
+    Returns:
+        True on success, False on failure.
+    """
+    client = EmailClient()
+
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; }}
+            .header {{ background: #c0392b; color: white; padding: 20px; text-align: center; }}
+            .body {{ padding: 20px; background: #f9f9f9; border-radius: 0 0 8px 8px; }}
+            .footer {{ text-align: center; padding: 15px; color: #666; font-size: 0.85em; }}
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h2>{subject}</h2>
+        </div>
+        <div class="body">
+            <p>{message}</p>
+        </div>
+        <div class="footer">
+            <p>Armitage Automation Alert</p>
+        </div>
+    </body>
+    </html>
+    """
+
+    return client.send_email(recipients, subject, html, plain_content=message)
+
+
 if __name__ == "__main__":
     import sys
 
