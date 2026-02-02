@@ -1,1 +1,0 @@
-0 12 * * 0 cd /home/shiro1729/projects/armitage-automation && .venv/bin/python main.py >> cron.log 2>&1
