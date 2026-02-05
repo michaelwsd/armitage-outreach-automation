@@ -12,7 +12,10 @@ Watch the log:
 """
 import sys
 import random
+from pathlib import Path
 from datetime import datetime, timedelta
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from scheduler import (
     _partition_companies,
@@ -21,7 +24,6 @@ from scheduler import (
     remove_session_crons,
     print_schedule_status,
     SCHEDULE_DIR,
-    DAY_NAMES,
 )
 from scraper import read_companies_from_csv
 
@@ -41,14 +43,9 @@ def generate_live_schedule():
     for idx, group in enumerate(groups):
         run_at = now + timedelta(minutes=2 + idx * 3)
 
-        # cron day-of-week: 0=Sun, 1=Mon ... 6=Sat
-        cron_dow = run_at.isoweekday()  # 1=Mon ... 7=Sun
-        if cron_dow == 7:
-            cron_dow = 0  # cron uses 0 for Sunday
-
         sessions.append({
             "session_id": f"sess_{idx:03d}",
-            "day": cron_dow,
+            "day_of_month": run_at.day,
             "day_name": run_at.strftime("%A"),
             "date": run_at.strftime("%Y-%m-%d"),
             "hour": run_at.hour,
@@ -60,7 +57,7 @@ def generate_live_schedule():
         })
 
     schedule = {
-        "week_of": now.strftime("%Y-%m-%d"),
+        "month_of": now.strftime("%Y-%m"),
         "generated_at": now.isoformat(timespec="seconds"),
         "total_companies": len(companies),
         "digest_sent": False,

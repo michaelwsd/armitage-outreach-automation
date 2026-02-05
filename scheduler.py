@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 # -------------------------------------------------------------------
 PROJECT_DIR = Path(__file__).resolve().parent
 SCHEDULE_DIR = PROJECT_DIR / "data" / "schedule"
-SCHEDULE_FILE = SCHEDULE_DIR / "weekly_schedule.json"
+SCHEDULE_FILE = SCHEDULE_DIR / "monthly_schedule.json"
 PYTHON_PATH = PROJECT_DIR / ".venv" / "bin" / "python"
 CRON_LOG = PROJECT_DIR / "cron.log"
 
@@ -31,14 +31,14 @@ CRON_SESSION_TAG = "# ARMITAGE_SESSION"
 CRON_META_TAG = "# ARMITAGE_META"
 
 MIN_GROUP_SIZE = 1
-MAX_GROUP_SIZE = 4
+MAX_GROUP_SIZE = 2
 SCRAPE_HOUR_START = 9   # earliest session hour (inclusive)
 SCRAPE_HOUR_END = 21    # latest session hour (exclusive)
 INTER_COMPANY_DELAY_MIN = 300   # 5 minutes
 INTER_COMPANY_DELAY_MAX = 900   # 15 minutes
 
-DAY_NAMES = {1: "Monday", 2: "Tuesday", 3: "Wednesday",
-             4: "Thursday", 5: "Friday", 6: "Saturday"}
+MONTH_DAY_START = 2   # earliest day-of-month for sessions (skip 1st: meta-cron day)
+MONTH_DAY_END = 26    # latest day-of-month (buffer before last-day digest cron)
 
 
 # -------------------------------------------------------------------
@@ -81,16 +81,29 @@ def _partition_companies(companies):
 
 
 def _assign_schedule_slots(num_sessions):
-    """Assign (cron_day, hour, minute) to each session, spread across Mon-Sat."""
-    available_days = list(range(1, 7))  # cron: 1=Mon ... 6=Sat
+    """Assign (day_of_month, hour, minute) to each session, spread across the month.
 
-    # Distribute sessions across days
-    if num_sessions <= len(available_days):
-        day_assignments = random.sample(available_days, num_sessions)
-    else:
+    Divides days 2-28 into equal segments and picks a random day within each
+    segment so sessions are naturally spaced out.
+    """
+    available_range = MONTH_DAY_END - MONTH_DAY_START + 1  # 27 days
+
+    if num_sessions <= available_range:
+        # Divide the range into num_sessions segments, pick one day per segment
+        segment_size = available_range / num_sessions
         day_assignments = []
-        base, remainder = divmod(num_sessions, len(available_days))
-        for day in available_days:
+        for i in range(num_sessions):
+            seg_start = int(MONTH_DAY_START + i * segment_size)
+            seg_end = int(MONTH_DAY_START + (i + 1) * segment_size) - 1
+            seg_end = min(seg_end, MONTH_DAY_END)
+            if seg_start > seg_end:
+                seg_start = seg_end
+            day_assignments.append(random.randint(seg_start, seg_end))
+    else:
+        # More sessions than available days — distribute evenly, multiple per day
+        day_assignments = []
+        base, remainder = divmod(num_sessions, available_range)
+        for day in range(MONTH_DAY_START, MONTH_DAY_END + 1):
             count = base + (1 if remainder > 0 else 0)
             if remainder > 0:
                 remainder -= 1
@@ -116,27 +129,28 @@ def _assign_schedule_slots(num_sessions):
     return slots
 
 
-def generate_weekly_schedule(companies):
-    """Generate a full weekly schedule covering all companies."""
+def generate_monthly_schedule(companies):
+    """Generate a full monthly schedule covering all companies."""
     groups = _partition_companies(companies)
     slots = _assign_schedule_slots(len(groups))
 
-    # Compute the upcoming Monday as "week_of"
+    # Determine the target month (current month if early, next month if generated late)
     today = datetime.now()
-    days_until_monday = (7 - today.weekday()) % 7
-    if days_until_monday == 0:
-        days_until_monday = 7
-    next_monday = today + timedelta(days=days_until_monday)
+    if today.day == 1:
+        # Generated on the 1st — schedule for this month
+        target_year, target_month = today.year, today.month
+    else:
+        # Generated mid-month — schedule for next month
+        first_of_next = (today.replace(day=1) + timedelta(days=32)).replace(day=1)
+        target_year, target_month = first_of_next.year, first_of_next.month
 
     sessions = []
-    for idx, (group, (day, hour, minute)) in enumerate(zip(groups, slots)):
-        # day is cron day-of-week: 1=Mon ... 6=Sat
-        # next_monday is weekday 0 (Mon), so offset = day - 1
-        session_date = next_monday + timedelta(days=day - 1)
+    for idx, (group, (dom, hour, minute)) in enumerate(zip(groups, slots)):
+        session_date = datetime(target_year, target_month, dom)
         sessions.append({
             "session_id": f"sess_{idx:03d}",
-            "day": day,
-            "day_name": DAY_NAMES[day],
+            "day_of_month": dom,
+            "day_name": session_date.strftime("%A"),
             "date": session_date.strftime("%Y-%m-%d"),
             "hour": hour,
             "minute": minute,
@@ -146,11 +160,10 @@ def generate_weekly_schedule(companies):
             "completed_at": None,
         })
 
-    # Sort by (day, hour, minute) for readability
-    sessions.sort(key=lambda s: (s["day"], s["hour"], s["minute"]))
+    sessions.sort(key=lambda s: (s["day_of_month"], s["hour"], s["minute"]))
 
     schedule = {
-        "week_of": next_monday.strftime("%Y-%m-%d"),
+        "month_of": f"{target_year}-{target_month:02d}",
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "total_companies": len(companies),
         "digest_sent": False,
@@ -179,22 +192,30 @@ def install_session_crons(schedule):
     # Remove old session crons
     lines = [l for l in existing.splitlines() if CRON_SESSION_TAG not in l]
 
-    # Add new session crons
+    # Add new session crons (using day-of-month, any day-of-week)
     for session in schedule["sessions"]:
         cron_line = (
-            f"{session['minute']} {session['hour']} * * {session['day']} "
+            f"{session['minute']} {session['hour']} {session['day_of_month']} * * "
             f"cd {PROJECT_DIR} && {PYTHON_PATH} scheduler.py run-session {session['session_id']} "
             f">> {CRON_LOG} 2>&1 {CRON_SESSION_TAG}"
         )
         lines.append(cron_line)
 
+    # Add last-day-of-month digest cron (fires on 28-31, only runs on actual last day)
+    digest_line = (
+        f'30 23 28-31 * * [ "$(date -d tomorrow +\\%d)" = "01" ] && '
+        f"cd {PROJECT_DIR} && {PYTHON_PATH} scheduler.py send-digest "
+        f">> {CRON_LOG} 2>&1 {CRON_SESSION_TAG}"
+    )
+    lines.append(digest_line)
+
     new_crontab = "\n".join(lines).strip() + "\n"
     _write_crontab(new_crontab)
-    logger.info(f"Installed {len(schedule['sessions'])} session cron entries")
+    logger.info(f"Installed {len(schedule['sessions'])} session cron entries + last-day digest cron")
 
 
 def install_meta_cron():
-    """Install the weekly meta cron (Sunday 22:00) if not already present."""
+    """Install the monthly meta cron (1st of each month at 00:30) if not already present."""
     existing = _read_crontab()
 
     if CRON_META_TAG in existing:
@@ -202,12 +223,12 @@ def install_meta_cron():
         return
 
     meta_line = (
-        f"0 22 * * 0 cd {PROJECT_DIR} && {PYTHON_PATH} scheduler.py generate "
+        f"30 0 1 * * cd {PROJECT_DIR} && {PYTHON_PATH} scheduler.py generate "
         f">> {CRON_LOG} 2>&1 {CRON_META_TAG}"
     )
     new_crontab = existing.rstrip("\n") + "\n" + meta_line + "\n" if existing.strip() else meta_line + "\n"
     _write_crontab(new_crontab)
-    logger.info("Meta cron installed (Sunday 22:00)")
+    logger.info("Meta cron installed (1st of each month at 00:30)")
 
 
 def remove_session_crons():
@@ -273,7 +294,7 @@ async def run_session(session_id):
     _save_schedule(schedule)
 
     companies = [tuple(c) for c in session["companies"]]
-    logger.info(f"Starting session {session_id}: {len(companies)} companies on {session['day_name']}")
+    logger.info(f"Starting session {session_id}: {len(companies)} companies on {session['date']} ({session['day_name']})")
 
     try:
         results = await scrape_companies(companies, inter_delay=True)
@@ -287,15 +308,28 @@ async def run_session(session_id):
 
     logger.info(f"Session {session_id} finished with status: {session['status']}")
 
-    # Check if all sessions are done -> send digest and clean up crons
+
+def send_monthly_digest():
+    """Send the digest on the last day of the month, regardless of session status."""
     schedule = _load_schedule()
-    if _all_sessions_done(schedule) and not schedule.get("digest_sent", False):
-        logger.info("All sessions complete. Sending weekly digest and cleaning up...")
-        _send_digest_and_cleanup(schedule)
+    if not schedule:
+        logger.info("No schedule found, nothing to send.")
+        return
+
+    if schedule.get("digest_sent", False):
+        logger.info("Digest already sent this month, skipping.")
+        return
+
+    pending = [s for s in schedule["sessions"] if s["status"] == "pending"]
+    if pending:
+        logger.warning(f"{len(pending)} sessions never ran this month")
+
+    logger.info("Last day of month: sending digest and cleaning up...")
+    _send_digest_and_cleanup(schedule)
 
 
 def _send_digest_and_cleanup(schedule):
-    """Send the weekly digest email and remove all session crons."""
+    """Send the monthly digest email, clean up data, and remove session crons."""
     recipients_str = os.getenv("EMAIL_RECIPIENTS", "")
     recipients = [r.strip() for r in recipients_str.split(",") if r.strip()]
 
@@ -314,7 +348,7 @@ def _send_digest_and_cleanup(schedule):
     schedule["digest_sent"] = True
     _save_schedule(schedule)
 
-    # Clean up data/input and data/output so next week starts fresh
+    # Clean up data/input and data/output so next month starts fresh
     for dirname in ("input", "output"):
         d = PROJECT_DIR / "data" / dirname
         if d.exists():
@@ -324,29 +358,29 @@ def _send_digest_and_cleanup(schedule):
                     logger.info(f"Deleted {f}")
     logger.info("Data directories cleaned")
 
-    # Uninstall all session crons — they're done for the week
+    # Uninstall all session crons — they're done for the month
     remove_session_crons()
-    logger.info("Weekly cycle complete: digest sent, output cleaned, session crons removed")
+    logger.info("Monthly cycle complete: digest sent, data cleaned, session crons removed")
 
 
 # -------------------------------------------------------------------
-# Weekly generation (meta-cron entrypoint)
+# Monthly generation (meta-cron entrypoint)
 # -------------------------------------------------------------------
 
 def generate_and_install():
     """
-    Generate a new weekly schedule and install session crons.
-    Also handles sending the previous week's digest if it wasn't sent.
+    Generate a new monthly schedule and install session crons.
+    Also handles sending the previous month's digest if it wasn't sent.
     """
-    # Handle previous week's leftover digest (only if some sessions actually ran)
+    # Handle previous month's leftover digest (only if some sessions actually ran)
     old_schedule = _load_schedule()
     if old_schedule and not old_schedule.get("digest_sent", False):
         completed = [s for s in old_schedule["sessions"] if s["status"] in ("completed", "failed")]
         if completed:
             pending = [s for s in old_schedule["sessions"] if s["status"] == "pending"]
             if pending:
-                logger.warning(f"{len(pending)} sessions from previous week never ran")
-            logger.info("Sending previous week's digest as safety net...")
+                logger.warning(f"{len(pending)} sessions from previous month never ran")
+            logger.info("Sending previous month's digest as safety net...")
             _send_digest_and_cleanup(old_schedule)
 
     # Remove old-style cron from legacy cron_setup.py
@@ -358,12 +392,12 @@ def generate_and_install():
         logger.error("No companies found in CSV. Nothing to schedule.")
         return
 
-    schedule = generate_weekly_schedule(companies)
+    schedule = generate_monthly_schedule(companies)
     _save_schedule(schedule)
     install_session_crons(schedule)
 
-    logger.info(f"New weekly schedule generated: {len(schedule['sessions'])} sessions "
-                f"for {len(companies)} companies (week of {schedule['week_of']})")
+    logger.info(f"New monthly schedule generated: {len(schedule['sessions'])} sessions "
+                f"for {len(companies)} companies (month of {schedule['month_of']})")
     print_schedule_status()
 
 
@@ -377,7 +411,7 @@ def print_schedule_status():
         print("No schedule found. Run 'python scheduler.py generate' to create one.")
         return
 
-    print(f"\nWeek of:     {schedule['week_of']}")
+    print(f"\nMonth of:    {schedule.get('month_of', schedule.get('week_of', 'unknown'))}")
     print(f"Generated:   {schedule['generated_at']}")
     print(f"Companies:   {schedule['total_companies']}")
     print(f"Digest sent: {schedule.get('digest_sent', False)}")
@@ -392,11 +426,9 @@ def print_schedule_status():
               f"({len(s['companies'])} companies: {companies_str})")
         last_session = s
 
-    if last_session and not schedule.get("digest_sent", False):
-        date_str = last_session.get("date", last_session["day_name"])
-        print(f"\nDigest email: after last session on {date_str} "
-              f"{last_session['day_name']} ~{last_session['hour']:02d}:{last_session['minute']:02d}")
-    elif schedule.get("digest_sent", False):
+    if not schedule.get("digest_sent", False):
+        print(f"\nDigest email: last day of month at 23:30")
+    else:
         print(f"\nDigest email: already sent")
     print()
 
@@ -408,7 +440,8 @@ def print_schedule_status():
 USAGE = """Usage:
     python scheduler.py generate            Generate schedule + install crons
     python scheduler.py run-session <id>    Run a specific session
-    python scheduler.py install-meta        Install the weekly meta cron
+    python scheduler.py send-digest         Send digest (last-day-of-month cron)
+    python scheduler.py install-meta        Install the monthly meta cron
     python scheduler.py status              Print current schedule status
     python scheduler.py uninstall           Remove all armitage crons
 """
@@ -427,6 +460,8 @@ if __name__ == "__main__":
             print("Error: session_id required")
             sys.exit(1)
         asyncio.run(run_session(sys.argv[2]))
+    elif command == "send-digest":
+        send_monthly_digest()
     elif command == "install-meta":
         install_meta_cron()
     elif command == "status":

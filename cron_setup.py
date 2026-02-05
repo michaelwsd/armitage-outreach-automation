@@ -15,7 +15,7 @@ def _remove_old_cron():
 
 
 def setup():
-    """Install the weekly scheduler meta-cron, replacing the old single cron."""
+    """Install the monthly scheduler meta-cron, replacing the old single cron."""
     _remove_old_cron()
     install_meta_cron()
     generate_and_install()
