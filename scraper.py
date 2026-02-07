@@ -5,8 +5,9 @@ import logging
 import os
 import random
 from company.get_company_info import get_info
-from scrapers.linkedin_scraper import scrape_news_linkedin
-from summarizer import summarize_csv
+from scrapers.linkedin_scraper_api import scrape_news_linkedin as scrape_linkedin_api
+from scrapers.linkedin_scraper_playwright import scrape_news_linkedin as scrape_linkedin_playwright
+from summarizer import summarize_posts
 from scrapers.perplexity_scraper import scrape_news_perplexity
 
 logging.basicConfig(
@@ -115,24 +116,47 @@ async def scrape(company, location):
         logger.exception(f"Unexpected error in news scrape for {company}: {e}")
         results['errors'].append(f"News scrape: {e}")
 
-    # Step 3: Scrape LinkedIn posts
+    # Step 3: Scrape LinkedIn posts (try API first, fall back to Playwright)
     posts_filepath = None
+    scraper_used = None
+
+    # Try API scraper first
     try:
-        posts_filepath = await scrape_news_linkedin(company_info)
+        logger.info(f"Attempting LinkedIn scrape via API for {company}")
+        posts_filepath = scrape_linkedin_api(company_info)
         if posts_filepath:
             results['linkedin_scrape'] = True
-            logger.info(f"LinkedIn scrape successful for {company}")
+            scraper_used = 'API'
+            logger.info(f"LinkedIn API scrape successful for {company}")
         else:
-            logger.warning(f"LinkedIn scrape returned no results for {company}")
-            results['errors'].append("LinkedIn scrape returned None")
+            logger.warning(f"LinkedIn API scrape returned no results for {company}")
     except Exception as e:
-        logger.exception(f"Unexpected error in LinkedIn scrape for {company}: {e}")
-        results['errors'].append(f"LinkedIn scrape: {e}")
+        logger.warning(f"LinkedIn API scrape failed for {company}: {e}")
+        results['errors'].append(f"LinkedIn API scrape: {e}")
+
+    # Fall back to Playwright if API failed
+    if not posts_filepath:
+        try:
+            logger.info(f"Falling back to Playwright scraper for {company}")
+            posts_filepath = await scrape_linkedin_playwright(company_info)
+            if posts_filepath:
+                results['linkedin_scrape'] = True
+                scraper_used = 'Playwright'
+                logger.info(f"LinkedIn Playwright scrape successful for {company}")
+            else:
+                logger.warning(f"LinkedIn Playwright scrape returned no results for {company}")
+                results['errors'].append("Both API and Playwright scrapers returned None")
+        except Exception as e:
+            logger.exception(f"Unexpected error in LinkedIn Playwright scrape for {company}: {e}")
+            results['errors'].append(f"LinkedIn Playwright scrape: {e}")
+
+    if scraper_used:
+        logger.info(f"LinkedIn scrape completed using: {scraper_used}")
 
     # Step 4: Summarize and merge data (only if we have both files)
     if news_filepath and posts_filepath:
         try:
-            summary_result = summarize_csv(news_filepath, posts_filepath)
+            summary_result = summarize_posts(news_filepath, posts_filepath)
             if summary_result is not None:
                 results['summarization'] = True
                 logger.info(f"Summarization successful for {company}")

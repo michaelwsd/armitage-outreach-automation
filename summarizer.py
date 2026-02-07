@@ -69,17 +69,62 @@ posts_batch_schema = {
     }
 }
 
-def parse_csv(filepath):
-    "parse the csv content in data/output/filename"
-
+def parse_posts_file(filepath):
+    """
+    Parse posts from either JSON or CSV format.
+    Returns a list of dicts with keys: Date, Likes, Content
+    """
     if not os.path.exists(filepath):
-        raise FileNotFoundError(f"CSV file not found: {filepath}")
+        raise FileNotFoundError(f"Posts file not found: {filepath}")
 
-    with open(filepath, 'r', encoding='utf-8') as file:
-        reader = csv.DictReader(file)
-        data = list(reader)
+    # Determine file type by extension
+    file_ext = os.path.splitext(filepath)[1].lower()
 
-    return data
+    if file_ext == '.json':
+        # Parse JSON format (from API scraper)
+        logger.info(f"Parsing JSON posts file: {filepath}")
+        with open(filepath, 'r', encoding='utf-8') as file:
+            json_data = json.load(file)
+
+        # Convert JSON format to expected format
+        data = []
+        for post in json_data:
+            # Extract date from date_posted field (ISO format)
+            date_posted = post.get('date_posted', 'Unknown')
+            if date_posted and date_posted != 'Unknown':
+                try:
+                    # Parse ISO date and format as DD/MM/YYYY (matching Perplexity format)
+                    dt = datetime.fromisoformat(date_posted.replace('Z', '+00:00'))
+                    formatted_date = dt.strftime("%d/%m/%Y")
+                except Exception:
+                    formatted_date = date_posted
+            else:
+                formatted_date = 'Unknown'
+
+            data.append({
+                'Date': formatted_date,
+                'Likes': '0',  # API doesn't provide likes
+                'Content': post.get('post_text', 'No Text')
+            })
+
+        return data
+
+    elif file_ext == '.csv':
+        # Parse CSV format (from Playwright scraper)
+        logger.info(f"Parsing CSV posts file: {filepath}")
+        with open(filepath, 'r', encoding='utf-8') as file:
+            reader = csv.DictReader(file)
+            data = list(reader)
+        return data
+
+    else:
+        raise ValueError(f"Unsupported file format: {file_ext}. Expected .json or .csv")
+
+
+# Keep backward compatibility
+def parse_csv(filepath):
+    """Backward compatibility wrapper for parse_posts_file"""
+    return parse_posts_file(filepath)
 
 
 def analyze_posts_batch_with_openai(posts):
@@ -181,16 +226,71 @@ def convert_relative_date_to_absolute(relative_date):
     return target_date.strftime("%d/%m/%Y")
 
 
+def calculate_relative_date(absolute_date_str):
+    """
+    Calculate relative date format (e.g., "2w", "1mo") from absolute date.
+
+    Args:
+        absolute_date_str: Date string in YYYY-MM-DD or DD/MM/YYYY format
+
+    Returns:
+        Relative date string like "1d", "2w", "1mo", "3y" or the original if parsing fails
+    """
+    try:
+        # Try parsing YYYY-MM-DD format first
+        try:
+            date_obj = datetime.strptime(absolute_date_str, "%Y-%m-%d")
+        except ValueError:
+            # Try DD/MM/YYYY format
+            date_obj = datetime.strptime(absolute_date_str, "%d/%m/%Y")
+
+        # Calculate difference from today
+        today = datetime.now()
+        delta = today - date_obj
+
+        days = delta.days
+
+        if days < 0:
+            # Future date
+            return absolute_date_str
+        elif days == 0:
+            return "today"
+        elif days == 1:
+            return "1d"
+        elif days < 7:
+            return f"{days}d"
+        elif days < 30:
+            weeks = days // 7
+            return f"{weeks}w"
+        elif days < 365:
+            months = days // 30
+            return f"{months}mo"
+        else:
+            years = days // 365
+            return f"{years}y"
+    except (ValueError, TypeError):
+        return absolute_date_str
+
+
 def parse_date_for_sorting(date_str):
     """
-    Parse date string in DD/MM/YYYY format for sorting.
-    Handles dates with relative time tags (e.g., '20/01/2026 - 3d').
+    Parse date string for sorting.
+    Handles multiple formats:
+    - DD/MM/YYYY format (from Playwright CSV)
+    - YYYY-MM-DD format (from API JSON)
+    - Dates with relative time tags (e.g., '20/01/2026 - 3d' or '2026-01-20 - 2026-01-20')
     Returns datetime object, or datetime.min if parsing fails.
     """
     try:
         # Extract just the date part before the " - " separator
         date_part = date_str.split(' - ')[0].strip()
-        return datetime.strptime(date_part, "%d/%m/%Y")
+
+        # Try DD/MM/YYYY format first (Playwright CSV)
+        try:
+            return datetime.strptime(date_part, "%d/%m/%Y")
+        except ValueError:
+            # Try YYYY-MM-DD format (API JSON)
+            return datetime.strptime(date_part, "%Y-%m-%d")
     except (ValueError, TypeError, IndexError):
         logger.warning(f"Could not parse date for sorting: '{date_str}'. Sorting to end.")
         return datetime.min
@@ -377,13 +477,13 @@ def add_posts_to_news_file(news_filepath, posts_data, message="", potential_acti
     return True
 
 
-def summarize_csv(news_filepath, posts_filepath):
+def summarize_posts(news_filepath, posts_filepath):
     """
-    Main function to process LinkedIn posts CSV and add growth indicators to news file.
+    Main function to process LinkedIn posts (JSON or CSV) and add growth indicators to news file.
 
     Args:
         news_filepath: Path to the company news JSON file (e.g., "data/output/OnQ Software.json")
-        posts_filepath: Path to the LinkedIn posts CSV file (e.g., "data/output/OnQ Software Linkedin Posts.csv")
+        posts_filepath: Path to the LinkedIn posts file (e.g., "data/output/OnQ Software Linkedin Posts.json" or .csv)
 
     Returns:
         list: Growth posts on success
@@ -399,7 +499,7 @@ def summarize_csv(news_filepath, posts_filepath):
         return None
 
     if not os.path.exists(posts_filepath):
-        logger.warning(f"Posts CSV file not found: {posts_filepath}, skipping LinkedIn post analysis")
+        logger.warning(f"Posts file not found: {posts_filepath}, skipping LinkedIn post analysis")
         return None
 
     if not os.path.exists(news_filepath):
@@ -409,12 +509,12 @@ def summarize_csv(news_filepath, posts_filepath):
     logger.info(f"Processing posts from {posts_filepath}")
 
     try:
-        # Parse CSV
-        posts = parse_csv(posts_filepath)
-        logger.info(f"Found {len(posts)} posts in CSV")
+        # Parse posts file (handles both JSON and CSV)
+        posts = parse_posts_file(posts_filepath)
+        logger.info(f"Found {len(posts)} posts")
 
         if not posts:
-            logger.warning("No posts found in CSV, skipping analysis")
+            logger.warning("No posts found, skipping analysis")
             return []
 
         # Analyze all posts in one batch API call
@@ -429,8 +529,17 @@ def summarize_csv(news_filepath, posts_filepath):
         growth_posts = []
         for analysis in analyzed_posts:
             if analysis.get('is_growth_indicator'):
-                relative_date = analysis.get('date', 'Unknown')
-                absolute_date = convert_relative_date_to_absolute(relative_date)
+                date_from_analysis = analysis.get('date', 'Unknown')
+
+                # Check if date is already absolute (DD/MM/YYYY format) or relative (e.g., "2w")
+                if date_from_analysis and '/' in date_from_analysis and len(date_from_analysis) == 10:
+                    # Already absolute format (DD/MM/YYYY) - from API or Perplexity
+                    absolute_date = date_from_analysis
+                    relative_date = calculate_relative_date(absolute_date)
+                else:
+                    # Relative format (e.g., "2w") - from Playwright CSV
+                    relative_date = date_from_analysis
+                    absolute_date = convert_relative_date_to_absolute(relative_date)
 
                 growth_posts.append({
                     "summary": analysis.get('summary', ''),
@@ -468,6 +577,15 @@ def summarize_csv(news_filepath, posts_filepath):
     except Exception as e:
         logger.exception(f"Error during summarization: {e}")
         return None
+
+
+# Backward compatibility wrapper
+def summarize_csv(news_filepath, posts_filepath):
+    """
+    Backward compatibility wrapper for summarize_posts.
+    Deprecated: Use summarize_posts instead.
+    """
+    return summarize_posts(news_filepath, posts_filepath)
 
 
 if __name__ == "__main__":
