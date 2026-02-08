@@ -314,6 +314,12 @@ async def scrape_all_companies():
                 'errors': [f"Critical error: {e}"]
             })
 
+        # Inter-company delay to avoid API rate limits (skip after last company)
+        if idx < len(companies_list) - 1:
+            delay = 300 # delay by 5 minutes between each scrape
+            logger.info(f"Waiting {delay}s before next company to avoid rate limits...")
+            await asyncio.sleep(delay)
+
     # Print final summary
     logger.info("=" * 50)
     logger.info("FINAL SUMMARY")
