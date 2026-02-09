@@ -80,7 +80,7 @@ def scrape_news_linkedin(company_info):
         # Step 1: Trigger the scrape (async)
         logger.info(f"Triggering BrightData scrape for {company_name}...")
         response = requests.post(
-            "https://api.brightdata.com/datasets/v3/trigger?dataset_id=gd_lyy3tktm25m4avu764&notify=false&include_errors=true&type=discover_new&discover_by=company_url",
+            "https://api.brightdata.com/datasets/v3/trigger?dataset_id=gd_lyy3tktm25m4avu764&custom_output_fields=title%2Cpost_text%2Cdate_posted&notify=false&type=discover_new&discover_by=company_url",
             headers=headers,
             data=data
         )
@@ -98,7 +98,7 @@ def scrape_news_linkedin(company_info):
 
         # Step 2: Poll for completion
         poll_url = f"https://api.brightdata.com/datasets/v3/progress/{snapshot_id}"
-        max_wait = 1200  # 10 minutes max
+        max_wait = 1200  # 20 minutes max
         poll_interval = 60  # seconds between polls
         elapsed = 0
 
@@ -136,25 +136,16 @@ def scrape_news_linkedin(company_info):
 
         response_text = download_resp.text.strip()
 
-        logger.info(f"Response status: {response.status_code}, length: {len(response_text)} characters, lines: {len(response_text.split(chr(10)))}")
+        logger.info(f"Download status: {download_resp.status_code}, length: {len(response_text)} characters")
 
-        # Each line is a separate post object - collect them all
-        posts_data = []
-        for line_num, line in enumerate(response_text.split('\n'), 1):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-                # Each line is a post object (dict with title, post_text, date_posted)
-                if isinstance(obj, dict) and 'post_text' in obj:
-                    posts_data.append(obj)
-                    logger.info(f"Line {line_num}: Added post")
-                else:
-                    logger.debug(f"Line {line_num}: Skipping - not a post object")
-            except json.JSONDecodeError as e:
-                logger.warning(f"Line {line_num} - Failed to parse: {e}")
-                continue
+        # Parse response - snapshot download returns a JSON array
+        parsed = json.loads(response_text)
+        if isinstance(parsed, list):
+            posts_data = [obj for obj in parsed if isinstance(obj, dict) and 'post_text' in obj]
+        elif isinstance(parsed, dict) and 'post_text' in parsed:
+            posts_data = [parsed]
+        else:
+            posts_data = []
 
         if not posts_data:
             logger.error("No posts found in response")
@@ -181,7 +172,7 @@ if __name__ == "__main__":
     # Test with sample company info
     company_info = {
         'hq_location': '11 Camford Street, Milton, QLD, 4064, AU',
-        'linkedin': 'axcelerate-student-training-rto-management-systems',
+        'linkedin': 'axcelerate-student-training-rto-management-systems', #onqsoftware
         'industry': 'E-learning and online education',
         'website': 'axcelerate.com.au',
         'name': 'Axcelerate',
