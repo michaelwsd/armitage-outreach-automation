@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from scheduler import (
+from schedule.scheduler import (
     _partition_companies,
     _save_schedule,
     install_session_crons,

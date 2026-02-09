@@ -67,11 +67,11 @@ class EmailClient:
                     </div>
                 """
 
-        if articles:
-            html += """
+        html += """
                         <div class="section">
                             <h2 class="section-title">News & Articles</h2>
                     """
+        if articles:
             for article in articles:
                 headline = article.get("headline", "No headline")
                 date = article.get("date", "Unknown date")
@@ -90,15 +90,17 @@ class EmailClient:
                                     {f'<div class="meta"><a href="{source_url}">Source</a></div>' if source_url else ''}
                                 </div>
                         """
-            html += "    </div>\n"
+        else:
+            html += '            <p style="color: #999; font-style: italic;">No news activity found.</p>\n'
+        html += "    </div>\n"
 
-        if posts:
-            linkedin_url = company_data.get("linkedin_url")
-            linkedin_title = f'<a href="{linkedin_url}" style="color: #2c3e50; text-decoration: none;">LinkedIn Posts</a>' if linkedin_url else "LinkedIn Posts"
-            html += f"""
+        linkedin_url = company_data.get("linkedin_url")
+        linkedin_title = f'<a href="{linkedin_url}" style="color: #2c3e50; text-decoration: none;">LinkedIn Posts</a>' if linkedin_url else "LinkedIn Posts"
+        html += f"""
                         <div class="section">
                             <h2 class="section-title">{linkedin_title}</h2>
                     """
+        if posts:
             for post in posts:
                 summary = post.get("summary", "")
                 date = post.get("date", "Unknown date")
@@ -113,32 +115,38 @@ class EmailClient:
                                     <div class="summary">{summary}</div>
                                 </div>
                         """
-            html += "    </div>\n"
+        else:
+            html += '            <p style="color: #999; font-style: italic;">No LinkedIn activity found.</p>\n'
+        html += "    </div>\n"
 
         potential_actions = company_data.get("potential_actions", [])
-        if potential_actions:
-            html += """
+        html += """
                         <div class="section">
                             <h2 class="section-title">Potential Actions for Analysts</h2>
-                            <ul style="background: white; padding: 15px 15px 15px 35px; margin: 0; border-left: 4px solid #9b59b6; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                     """
+        if potential_actions:
+            html += '            <ul style="background: white; padding: 15px 15px 15px 35px; margin: 0; border-left: 4px solid #9b59b6; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">\n'
             for action in potential_actions:
                 html += f'            <li style="margin: 8px 0; color: #333;">{action}</li>\n'
-            html += """
-                            </ul>
-                        </div>
-                    """
+            html += '            </ul>\n'
+        else:
+            html += '            <p style="color: #999; font-style: italic;">No actions available.</p>\n'
+        html += "        </div>\n"
 
         message = company_data.get("message", "")
-        if message:
-            html += f"""
+        html += """
                         <div class="section">
                             <h2 class="section-title">Suggested LinkedIn Reachout</h2>
+                    """
+        if message:
+            html += f"""
                             <div style="background: white; padding: 15px; border-left: 4px solid #27ae60; box-shadow: 0 1px 3px rgba(0,0,0,0.1); white-space: pre-line;">
                                 {message}
                             </div>
-                        </div>
                     """
+        else:
+            html += '            <p style="color: #999; font-style: italic;">No outreach message available.</p>\n'
+        html += "        </div>\n"
 
         html += """
                     <div class="footer">
@@ -193,7 +201,7 @@ class EmailClient:
 
 def load_json_files(output_dir: str = "data/output") -> list[dict]:
     """Load all JSON files from the output directory."""
-    script_dir = Path(__file__).parent
+    script_dir = Path(__file__).parent.parent
     output_path = script_dir / output_dir
 
     if not output_path.exists():
@@ -310,11 +318,11 @@ def send_digest_report(recipients: list[str], output_dir: str = "data/output") -
                     <div class="company-section" id="company-{i}">
                         <h2 class="company-name">{company_name}</h2>
                 """
-        if articles:
-            html += """
+        html += """
                             <div class="subsection">
                                 <h3 class="subsection-title">News & Articles</h3>
                     """
+        if articles:
             for article in articles[:5]:  # Limit to 5 articles per company in digest
                 headline = article.get("headline", "No headline")
                 date = article.get("date", "")
@@ -331,15 +339,17 @@ def send_digest_report(recipients: list[str], output_dir: str = "data/output") -
                                         {f'<a href="{source_url}">Read more</a>' if source_url else ''}
                                     </div>
                         """
-            html += "        </div>\n"
+        else:
+            html += '                <p style="color: #999; font-style: italic;">No news activity found.</p>\n'
+        html += "        </div>\n"
 
-        if posts:
-            linkedin_url = company_data.get("linkedin_url")
-            linkedin_title = f'<a href="{linkedin_url}" style="color: #34495e; text-decoration: none;">LinkedIn Activity</a>' if linkedin_url else "LinkedIn Activity"
-            html += f"""
+        linkedin_url = company_data.get("linkedin_url")
+        linkedin_title = f'<a href="{linkedin_url}" style="color: #34495e; text-decoration: none;">LinkedIn Activity</a>' if linkedin_url else "LinkedIn Activity"
+        html += f"""
                             <div class="subsection">
                                 <h3 class="subsection-title">{linkedin_title}</h3>
                     """
+        if posts:
             for post in posts[:3]:  # Limit to 3 posts per company in digest
                 summary = post.get("summary", "")
                 date = post.get("date", "")
@@ -352,34 +362,40 @@ def send_digest_report(recipients: list[str], output_dir: str = "data/output") -
                                         {f'<p style="margin: 8px 0; color: #555;">{summary}</p>' if summary else ''}
                                     </div>
                         """
-            html += "        </div>\n"
+        else:
+            html += '                <p style="color: #999; font-style: italic;">No LinkedIn activity found.</p>\n'
+        html += "        </div>\n"
 
         potential_actions = company_data.get("potential_actions", [])
-        if potential_actions:
-            html += """
+        html += """
                         <div class="subsection">
                             <h3 class="subsection-title">Potential Actions for Analysts</h3>
-                            <div class="item" style="border-left-color: #9b59b6;">
-                                <ul style="margin: 0; padding-left: 20px;">
                     """
+        if potential_actions:
+            html += '                            <div class="item" style="border-left-color: #9b59b6;">\n'
+            html += '                                <ul style="margin: 0; padding-left: 20px;">\n'
             for action in potential_actions:
                 html += f'                <li style="margin: 6px 0; color: #555;">{action}</li>\n'
-            html += """
-                                </ul>
-                            </div>
-                        </div>
-                    """
+            html += '                                </ul>\n'
+            html += '                            </div>\n'
+        else:
+            html += '                <p style="color: #999; font-style: italic;">No actions available.</p>\n'
+        html += "        </div>\n"
 
         message = company_data.get("message", "")
-        if message:
-            html += f"""
+        html += """
                         <div class="subsection">
                             <h3 class="subsection-title">Suggested LinkedIn Reachout</h3>
+                    """
+        if message:
+            html += f"""
                             <div class="item" style="border-left-color: #27ae60; white-space: pre-line;">
                                 {message}
                             </div>
-                        </div>
                     """
+        else:
+            html += '                <p style="color: #999; font-style: italic;">No outreach message available.</p>\n'
+        html += "        </div>\n"
 
         html += "    </div>\n"
 

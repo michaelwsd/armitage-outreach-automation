@@ -55,9 +55,13 @@ companies.csv
 ```
 ├── main.py                          # Entry point, runs full pipeline
 ├── scraper.py                       # Orchestrates scraping per company
-├── summarizer.py                    # AI post analysis + reachout message generation
-├── email_client.py                  # HTML email formatting and SMTP delivery
 ├── salesforce.py                    # Salesforce CRM integration
+├── schedule/
+│   ├── scheduler.py                 # Monthly schedule generation + cron management
+│   └── cron_setup.py                # Cron installation helper
+├── utils/
+│   ├── summarizer.py                # AI post analysis + reachout message generation
+│   └── email_client.py              # HTML email formatting and SMTP delivery
 ├── company/
 │   ├── get_company_info.py          # Aggregates company data from APIs
 │   ├── serp_company_url.py          # Google Search via SerpAPI
@@ -71,9 +75,10 @@ companies.csv
 │   └── output/                      # Generated JSON reports and CSV/JSON files
 ├── .github/
 │   └── workflows/
-│       ├── run-on-push.yml          # GitHub Actions: runs on push
-│       └── scraper.yml              # GitHub Actions: scheduled daily
-└── cron.txt                         # Cron schedule definition
+│       └── run-schedule.yml         # GitHub Actions: scheduled monthly + manual trigger
+└── tests/
+    ├── test_scheduler.py            # Scheduler unit tests
+    └── test_live.py                 # Live integration test
 ```
 
 ## Setup
@@ -181,10 +186,13 @@ python scrapers/linkedin_scraper_api.py
 python scrapers/linkedin_scraper_playwright.py
 
 # Summarize LinkedIn posts for a single company
-python summarizer.py
+python utils/summarizer.py
 
 # Send digest email from existing output data
-python email_client.py recipient@example.com
+python utils/email_client.py recipient@example.com
+
+# Generate monthly schedule and install crons
+python schedule/scheduler.py generate
 
 # Sync data to Salesforce
 python salesforce.py
@@ -208,8 +216,7 @@ The project includes GitHub Actions workflows for automated execution:
    - Add all environment variables from `.env` as repository secrets
 
 3. **Workflows will run**:
-   - **On push**: Every time you push code (`.github/workflows/run-on-push.yml`)
-   - **Scheduled**: Daily at 9 AM UTC (`.github/workflows/scraper.yml`)
+   - **Scheduled**: Monthly on the 25th at 00:00 UTC (`.github/workflows/run-schedule.yml`)
    - **Manual**: Click "Run workflow" in Actions tab
 
 #### Benefits of GitHub Actions
@@ -275,22 +282,17 @@ The system automatically tries the API first and falls back to Playwright only i
 
 ### Local Cron (Linux/Mac)
 
-The pipeline can run weekly via cron. Schedule defined in `cron.txt`:
-
-```
-0 12 * * 0  # Every Sunday at noon
-```
-
-Install the cron job:
+The scheduler generates a monthly scraping plan and installs per-session cron entries:
 
 ```bash
-crontab cron.txt
-```
+# Generate schedule + install crons
+python schedule/scheduler.py generate
 
-Verify installation:
+# Check current schedule status
+python schedule/scheduler.py status
 
-```bash
-crontab -l
+# Remove all armitage crons
+python schedule/scheduler.py uninstall
 ```
 
 Check logs:
@@ -302,12 +304,13 @@ tail -f cron.log
 ### GitHub Actions (Recommended)
 
 Use GitHub Actions for cloud-based scheduling:
+- Runs monthly on the 25th at 00:00 UTC
 - No server maintenance
 - Automatic notifications
 - Version-controlled configuration
 - Free tier available
 
-See `.github/workflows/scraper.yml` for configuration.
+See `.github/workflows/run-schedule.yml` for configuration.
 
 ## Tools & APIs
 

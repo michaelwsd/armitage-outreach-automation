@@ -8,7 +8,7 @@ from company.get_company_info import get_info
 from scrapers.linkedin_scraper_api import scrape_news_linkedin as scrape_linkedin_api
 from scrapers.linkedin_scraper_requests import scrape_news_linkedin as scrape_linkedin_requests
 from scrapers.linkedin_scraper_playwright import scrape_news_linkedin as scrape_linkedin_playwright
-from summarizer import summarize_posts, generate_reachout_message, generate_potential_actions, add_posts_to_news_file
+from utils.summarizer import summarize_posts, generate_reachout_message, generate_potential_actions, add_posts_to_news_file
 from scrapers.perplexity_scraper import scrape_news_perplexity
 
 logging.basicConfig(

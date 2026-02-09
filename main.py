@@ -2,7 +2,7 @@ import asyncio
 import logging
 from pathlib import Path
 from scraper import scrape_all_companies
-from email_client import send_all_reports, send_digest_report
+from utils.email_client import send_all_reports, send_digest_report
 
 logging.basicConfig(
     level=logging.INFO,  
@@ -56,7 +56,7 @@ if __name__ == "__main__":
     import sys
 
     if len(sys.argv) > 1 and sys.argv[1] == "--scheduled":
-        from scheduler import generate_and_install
+        from schedule.scheduler import generate_and_install
         generate_and_install()
     else:
         run(["mwan0165@student.monash.edu"])

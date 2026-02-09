@@ -10,7 +10,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 
 from scraper import read_companies_from_csv, scrape_companies
-from email_client import send_digest_report
+from utils.email_client import send_digest_report
 
 logging.basicConfig(
     level=logging.INFO,
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 # -------------------------------------------------------------------
 # Paths & constants
 # -------------------------------------------------------------------
-PROJECT_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = Path(__file__).resolve().parent.parent
 SCHEDULE_DIR = PROJECT_DIR / "data" / "schedule"
 SCHEDULE_FILE = SCHEDULE_DIR / "monthly_schedule.json"
 PYTHON_PATH = PROJECT_DIR / ".venv" / "bin" / "python"
@@ -196,7 +196,7 @@ def install_session_crons(schedule):
     for session in schedule["sessions"]:
         cron_line = (
             f"{session['minute']} {session['hour']} {session['day_of_month']} * * "
-            f"cd {PROJECT_DIR} && {PYTHON_PATH} scheduler.py run-session {session['session_id']} "
+            f"cd {PROJECT_DIR} && {PYTHON_PATH} schedule/scheduler.py run-session {session['session_id']} "
             f">> {CRON_LOG} 2>&1 {CRON_SESSION_TAG}"
         )
         lines.append(cron_line)
@@ -204,7 +204,7 @@ def install_session_crons(schedule):
     # Add last-day-of-month digest cron (fires on 28-31, only runs on actual last day)
     digest_line = (
         f'30 23 28-31 * * [ "$(date -d tomorrow +\\%d)" = "01" ] && '
-        f"cd {PROJECT_DIR} && {PYTHON_PATH} scheduler.py send-digest "
+        f"cd {PROJECT_DIR} && {PYTHON_PATH} schedule/scheduler.py send-digest "
         f">> {CRON_LOG} 2>&1 {CRON_SESSION_TAG}"
     )
     lines.append(digest_line)
@@ -223,7 +223,7 @@ def install_meta_cron():
         return
 
     meta_line = (
-        f"30 0 1 * * cd {PROJECT_DIR} && {PYTHON_PATH} scheduler.py generate "
+        f"30 0 1 * * cd {PROJECT_DIR} && {PYTHON_PATH} schedule/scheduler.py generate "
         f">> {CRON_LOG} 2>&1 {CRON_META_TAG}"
     )
     new_crontab = existing.rstrip("\n") + "\n" + meta_line + "\n" if existing.strip() else meta_line + "\n"
@@ -438,12 +438,12 @@ def print_schedule_status():
 # -------------------------------------------------------------------
 
 USAGE = """Usage:
-    python scheduler.py generate            Generate schedule + install crons
-    python scheduler.py run-session <id>    Run a specific session
-    python scheduler.py send-digest         Send digest (last-day-of-month cron)
-    python scheduler.py install-meta        Install the monthly meta cron
-    python scheduler.py status              Print current schedule status
-    python scheduler.py uninstall           Remove all armitage crons
+    python schedule/scheduler.py generate            Generate schedule + install crons
+    python schedule/scheduler.py run-session <id>    Run a specific session
+    python schedule/scheduler.py send-digest         Send digest (last-day-of-month cron)
+    python schedule/scheduler.py install-meta        Install the monthly meta cron
+    python schedule/scheduler.py status              Print current schedule status
+    python schedule/scheduler.py uninstall           Remove all armitage crons
 """
 
 if __name__ == "__main__":

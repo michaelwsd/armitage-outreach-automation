@@ -1,5 +1,5 @@
 import subprocess
-from scheduler import install_meta_cron, generate_and_install
+from schedule.scheduler import install_meta_cron, generate_and_install
 
 
 def _remove_old_cron():

@@ -12,7 +12,7 @@ from unittest.mock import patch, AsyncMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from scheduler import (
+from schedule.scheduler import (
     _partition_companies,
     _assign_schedule_slots,
     _send_digest_and_cleanup,
@@ -181,9 +181,9 @@ def _noop_cleanup(*args, **kwargs):
 
 
 async def run_mock_session(session_id):
-    with patch("scheduler.scrape_companies", new_callable=AsyncMock, return_value=mock_results), \
-         patch("scheduler.send_digest_report", return_value=True), \
-         patch("scheduler.remove_session_crons"), \
+    with patch("schedule.scheduler.scrape_companies", new_callable=AsyncMock, return_value=mock_results), \
+         patch("schedule.scheduler.send_digest_report", return_value=True), \
+         patch("schedule.scheduler.remove_session_crons"), \
          patch("pathlib.Path.unlink", _noop_cleanup):
         await run_session(session_id)
 
@@ -270,8 +270,8 @@ already_sent_schedule = generate_monthly_schedule(COMPANIES_4)
 already_sent_schedule["digest_sent"] = True
 _save_schedule(already_sent_schedule)
 
-with patch("scheduler.send_digest_report", return_value=True) as mock_send, \
-     patch("scheduler.remove_session_crons"), \
+with patch("schedule.scheduler.send_digest_report", return_value=True) as mock_send, \
+     patch("schedule.scheduler.remove_session_crons"), \
      patch("pathlib.Path.unlink", _noop_cleanup):
     send_monthly_digest()
     test("send_monthly_digest skips when already sent", mock_send.call_count == 0)
@@ -284,8 +284,8 @@ for s in all_done_schedule["sessions"]:
     s["completed_at"] = "2026-03-10T10:30:00"
 _save_schedule(all_done_schedule)
 
-with patch("scheduler.send_digest_report", return_value=True) as mock_send, \
-     patch("scheduler.remove_session_crons"), \
+with patch("schedule.scheduler.send_digest_report", return_value=True) as mock_send, \
+     patch("schedule.scheduler.remove_session_crons"), \
      patch("pathlib.Path.unlink", _noop_cleanup):
     send_monthly_digest()
     test("send_monthly_digest sends when all done", mock_send.call_count == 1)
@@ -301,8 +301,8 @@ partial_schedule["sessions"][0]["completed_at"] = "2026-03-05T14:20:00"
 # rest stay pending
 _save_schedule(partial_schedule)
 
-with patch("scheduler.send_digest_report", return_value=True) as mock_send, \
-     patch("scheduler.remove_session_crons"), \
+with patch("schedule.scheduler.send_digest_report", return_value=True) as mock_send, \
+     patch("schedule.scheduler.remove_session_crons"), \
      patch("pathlib.Path.unlink", _noop_cleanup):
     send_monthly_digest()
     test("send_monthly_digest sends even with pending sessions (last-day fallback)",
@@ -315,7 +315,7 @@ test("digest_sent=True after partial send", after_partial["digest_sent"] is True
 if SCHEDULE_FILE.exists():
     SCHEDULE_FILE.unlink()
 
-with patch("scheduler.send_digest_report", return_value=True) as mock_send:
+with patch("schedule.scheduler.send_digest_report", return_value=True) as mock_send:
     send_monthly_digest()
     test("send_monthly_digest handles missing schedule gracefully", mock_send.call_count == 0)
 
@@ -331,9 +331,9 @@ _save_schedule(int_schedule)
 session_ids = [s["session_id"] for s in int_schedule["sessions"]]
 
 for idx, sid in enumerate(session_ids):
-    with patch("scheduler.scrape_companies", new_callable=AsyncMock, return_value=mock_results), \
-         patch("scheduler.send_digest_report", return_value=True) as mock_send, \
-         patch("scheduler.remove_session_crons"), \
+    with patch("schedule.scheduler.scrape_companies", new_callable=AsyncMock, return_value=mock_results), \
+         patch("schedule.scheduler.send_digest_report", return_value=True) as mock_send, \
+         patch("schedule.scheduler.remove_session_crons"), \
          patch("pathlib.Path.unlink", _noop_cleanup):
         asyncio.run(run_session(sid))
         test(f"Session {sid}: digest NOT sent by run_session", mock_send.call_count == 0)
@@ -429,8 +429,8 @@ for f in (dummy_input, dummy_output_1, dummy_output_2):
 cleanup_schedule = generate_monthly_schedule(COMPANIES_4)
 _save_schedule(cleanup_schedule)
 
-with patch("scheduler.send_digest_report", return_value=True) as mock_send, \
-     patch("scheduler.remove_session_crons") as mock_remove_crons:
+with patch("schedule.scheduler.send_digest_report", return_value=True) as mock_send, \
+     patch("schedule.scheduler.remove_session_crons") as mock_remove_crons:
     _send_digest_and_cleanup(cleanup_schedule)
 
     # Verify email was sent
@@ -459,8 +459,8 @@ dummy_input.write_text("test data 2")
 test("Created dummy for no-email test", dummy_input.exists())
 
 with patch.dict(os.environ, {"EMAIL_RECIPIENTS": ""}), \
-     patch("scheduler.send_digest_report", return_value=True) as mock_send, \
-     patch("scheduler.remove_session_crons") as mock_remove_crons:
+     patch("schedule.scheduler.send_digest_report", return_value=True) as mock_send, \
+     patch("schedule.scheduler.remove_session_crons") as mock_remove_crons:
     _send_digest_and_cleanup(no_email_schedule)
 
     test("No-email cleanup: digest email NOT sent", mock_send.call_count == 0)
@@ -475,8 +475,8 @@ fail_schedule = generate_monthly_schedule(COMPANIES_4)
 _save_schedule(fail_schedule)
 dummy_output_1.write_text("test data 3")
 
-with patch("scheduler.send_digest_report", side_effect=Exception("SMTP error")) as mock_send, \
-     patch("scheduler.remove_session_crons"):
+with patch("schedule.scheduler.send_digest_report", side_effect=Exception("SMTP error")) as mock_send, \
+     patch("schedule.scheduler.remove_session_crons"):
     _send_digest_and_cleanup(fail_schedule)
 
 test("Email-fail cleanup: files still deleted", not dummy_output_1.exists())
