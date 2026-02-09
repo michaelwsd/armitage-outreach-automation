@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import time
 import requests
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
@@ -76,26 +77,64 @@ def scrape_news_linkedin(company_info):
     })
 
     try:
-        logger.info(f"Making API request to BrightData for {company_name}...")
+        # Step 1: Trigger the scrape (async)
+        logger.info(f"Triggering BrightData scrape for {company_name}...")
         response = requests.post(
-            "https://api.brightdata.com/datasets/v3/scrape?dataset_id=gd_lyy3tktm25m4avu764&custom_output_fields=title%2Cpost_text%2Cdate_posted&notify=false&type=discover_new&discover_by=company_url",
+            "https://api.brightdata.com/datasets/v3/trigger?dataset_id=gd_lyy3tktm25m4avu764&notify=false&include_errors=true&type=discover_new&discover_by=company_url",
             headers=headers,
-            data=data,
-            timeout=100
+            data=data
         )
 
-        # Check for HTTP errors
         if not response.ok:
             logger.error(f"API error {response.status_code}: {response.text[:500]}")
-        response.raise_for_status()
+            response.raise_for_status()
 
-        # Handle async 202 response (BrightData returns snapshot_id instead of data)
-        if response.status_code == 202:
-            logger.warning(f"BrightData returned 202 (async). Snapshot queued but not yet available. Response: {response.text[:300]}")
+        snapshot_id = response.json().get("snapshot_id")
+        if not snapshot_id:
+            logger.error(f"No snapshot_id in trigger response: {response.text[:300]}")
             return None
 
-        # BrightData returns NDJSON (multiple JSON objects on separate lines)
-        response_text = response.text.strip()
+        logger.info(f"Scrape triggered, snapshot_id: {snapshot_id}")
+
+        # Step 2: Poll for completion
+        poll_url = f"https://api.brightdata.com/datasets/v3/progress/{snapshot_id}"
+        max_wait = 1200  # 10 minutes max
+        poll_interval = 60  # seconds between polls
+        elapsed = 0
+
+        while elapsed < max_wait:
+            time.sleep(poll_interval)
+            elapsed += poll_interval
+
+            progress_resp = requests.get(poll_url, headers={"Authorization": f"Bearer {api_key}"})
+            if not progress_resp.ok:
+                logger.warning(f"Progress check failed ({progress_resp.status_code}): {progress_resp.text[:200]}")
+                continue
+
+            status = progress_resp.json().get("status")
+            logger.info(f"Snapshot {snapshot_id} status: {status} (waited {elapsed}s)")
+
+            if status == "ready":
+                break
+            elif status == "failed":
+                logger.error(f"Snapshot failed: {progress_resp.text[:300]}")
+                return None
+        else:
+            logger.error(f"Snapshot {snapshot_id} did not complete within {max_wait}s")
+            return None
+
+        # Step 3: Download the snapshot
+        logger.info(f"Downloading snapshot {snapshot_id}...")
+        download_resp = requests.get(
+            f"https://api.brightdata.com/datasets/v3/snapshot/{snapshot_id}?format=json",
+            headers={"Authorization": f"Bearer {api_key}"}
+        )
+
+        if not download_resp.ok:
+            logger.error(f"Download failed ({download_resp.status_code}): {download_resp.text[:500]}")
+            return None
+
+        response_text = download_resp.text.strip()
 
         logger.info(f"Response status: {response.status_code}, length: {len(response_text)} characters, lines: {len(response_text.split(chr(10)))}")
 
