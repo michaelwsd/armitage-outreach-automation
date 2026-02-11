@@ -1,4 +1,4 @@
-# Armitage Automation
+# Armitage Outreach Automation
 
 Automated growth intelligence pipeline for private equity analysts. Imports target companies from Salesforce, scrapes news and LinkedIn for growth signals, generates AI-powered analysis and outreach recommendations, then delivers results via email digests and Salesforce CRM sync.
 
