@@ -1,19 +1,23 @@
 name: Run Main Script
 
 on:
-  push:
+  # push:
 
   # Run at 00:00 UTC on the 25th of every month
-  # schedule:
-  #   - cron: '0 0 25 * *'
+  schedule:
+    - cron: '0 0 25 * *'
 
   # Allow manual trigger
   workflow_dispatch:
 
+concurrency:
+  group: scrape-pipeline
+  cancel-in-progress: true
+
 env:
   BATCH_SIZE: 5
   # Limit total companies processed (set to 0 for no limit)
-  COMPANY_LIMIT: 10
+  COMPANY_LIMIT: 0
   OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
   PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
   FIRMABLE_API_KEY: ${{ secrets.FIRMABLE_API_KEY }}
